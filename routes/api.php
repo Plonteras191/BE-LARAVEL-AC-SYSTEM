@@ -14,4 +14,5 @@ Route::get('/appointments', [AppointmentController::class, 'index']);
 Route::delete('/appointments/{id}', [AppointmentController::class, 'destroy']);
 Route::put('/appointments/{id}', [AppointmentController::class, 'reschedule'])->where('action', 'reschedule');
 Route::post('/appointments/{id}', [AppointmentController::class, 'accept'])->where('action', 'accept');
-
+Route::post('/appointments/{id}', [AppointmentController::class, 'complete'])
+    ->where('action', 'complete');
