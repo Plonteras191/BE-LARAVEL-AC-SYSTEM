@@ -14,10 +14,8 @@ Route::post('/booking', [BookingController::class, 'store']);
 Route::get('/appointments', [AppointmentController::class, 'index']);
 Route::delete('/appointments/{id}', [AppointmentController::class, 'destroy']);
 Route::put('/appointments/{id}', [AppointmentController::class, 'reschedule'])->where('action', 'reschedule');
-Route::post('/appointments/{id}', [AppointmentController::class, 'accept'])->where('action', 'accept');
-Route::post('/appointments/{id}', [AppointmentController::class, 'complete'])
-    ->where('action', 'complete');
-
+Route::post('/appointments/{id}/accept', [AppointmentController::class, 'accept']);
+Route::post('/appointments/{id}/complete', [AppointmentController::class, 'complete']);
     // Revenue History Routes
 Route::get('/revenue-history', [RevenueHistoryController::class, 'index']);
 Route::post('/revenue-history', [RevenueHistoryController::class, 'store']);
