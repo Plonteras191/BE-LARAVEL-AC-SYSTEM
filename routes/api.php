@@ -22,3 +22,4 @@ Route::post('/appointments/{id}/complete', [AppointmentController::class, 'compl
 // Revenue History Routes
 Route::get('/revenue-history', [RevenueHistoryController::class, 'index']);
 Route::post('/revenue-history', [RevenueHistoryController::class, 'store']);
+Route::get('/revenue-history/service-summary', [RevenueHistoryController::class, 'getServiceRevenueSummary']);
