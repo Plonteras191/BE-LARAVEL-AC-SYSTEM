@@ -55,34 +55,35 @@ class BookingController extends Controller
     }
 
     public function checkDateAvailability(Request $request)
-{
-    $dates = $request->input('dates', []);
+    {
+        $dates = $request->input('dates', []);
 
-    if (empty($dates)) {
+        if (empty($dates)) {
+            return response()->json([
+                'error' => 'No dates provided for checking'
+            ], 400);
+        }
+
+        $result = [];
+
+        foreach ($dates as $date) {
+            // Get count of services on this date
+            $count = BookingService::whereDate('appointment_date', $date)
+                ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
+                ->whereIn('bookings.status', ['Pending', 'Accepted'])
+                ->count();
+
+            $result[$date] = [
+                'available' => ($count < 2),
+                'remaining_slots' => 2 - $count
+            ];
+        }
+
         return response()->json([
-            'error' => 'No dates provided for checking'
-        ], 400);
+            'dates' => $result
+        ]);
     }
 
-    $result = [];
-
-    foreach ($dates as $date) {
-        // Get count of services on this date
-        $count = BookingService::whereDate('appointment_date', $date)
-            ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
-            ->whereIn('bookings.status', ['Pending', 'Accepted'])
-            ->count();
-
-        $result[$date] = [
-            'available' => ($count < 2),
-            'remaining_slots' => 2 - $count
-        ];
-    }
-
-    return response()->json([
-        'dates' => $result
-    ]);
-}
     // Create a new booking with date validation
     public function store(Request $request)
     {
@@ -129,10 +130,10 @@ class BookingController extends Controller
                 $bookingService->appointment_date = $service['date'];
                 $bookingService->save();
 
-                // Create AC type records
+                // Create AC type records linked to the booking service
                 foreach ($service['acTypes'] as $acType) {
                     $bookingAcType = new BookingActype();
-                    $bookingAcType->booking_id = $booking->id;
+                    $bookingAcType->booking_service_id = $bookingService->id; // Updated to use booking_service_id
                     $bookingAcType->ac_type = $acType;
                     $bookingAcType->save();
                 }

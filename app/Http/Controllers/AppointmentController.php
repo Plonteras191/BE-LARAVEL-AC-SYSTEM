@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Booking;
 use App\Models\BookingService;
+use App\Models\BookingActype;
 use Illuminate\Support\Facades\DB;
 
 class AppointmentController extends Controller
@@ -19,27 +20,16 @@ class AppointmentController extends Controller
             $services = BookingService::where('booking_id', $booking->id)->get();
             $servicesData = [];
 
-            // Get all AC types for this booking once
-            $allAcTypes = DB::table('booking_actypes')
-                ->where('booking_id', $booking->id)
-                ->pluck('ac_type')
-                ->toArray();
+            foreach ($services as $service) {
+                // Get AC types for this specific service
+                $acTypes = BookingActype::where('booking_service_id', $service->id)
+                    ->pluck('ac_type')
+                    ->toArray();
 
-            // Calculate AC types per service based on service count
-            $serviceCount = count($services);
-            $acTypesPerService = [];
-
-            if ($serviceCount > 0) {
-                // Distribute AC types evenly if multiple services
-                $acTypesPerService = array_chunk($allAcTypes, ceil(count($allAcTypes) / $serviceCount));
-            }
-
-            foreach ($services as $index => $service) {
                 $servicesData[] = [
                     'type' => $service->service_type,
                     'date' => $service->appointment_date,
-                    'ac_types' => $serviceCount > 0 && isset($acTypesPerService[$index]) ?
-                                  $acTypesPerService[$index] : []
+                    'ac_types' => $acTypes
                 ];
             }
 
@@ -185,27 +175,16 @@ class AppointmentController extends Controller
         $services = BookingService::where('booking_id', $id)->get();
         $servicesData = [];
 
-        // Get all AC types for this booking once
-        $allAcTypes = DB::table('booking_actypes')
-            ->where('booking_id', $id)
-            ->pluck('ac_type')
-            ->toArray();
+        foreach ($services as $service) {
+            // Get AC types for this specific service
+            $acTypes = BookingActype::where('booking_service_id', $service->id)
+                ->pluck('ac_type')
+                ->toArray();
 
-        // Calculate AC types per service based on service count
-        $serviceCount = count($services);
-        $acTypesPerService = [];
-
-        if ($serviceCount > 0) {
-            // Distribute AC types evenly if multiple services
-            $acTypesPerService = array_chunk($allAcTypes, ceil(count($allAcTypes) / $serviceCount));
-        }
-
-        foreach ($services as $index => $service) {
             $servicesData[] = [
                 'type' => $service->service_type,
                 'date' => $service->appointment_date,
-                'ac_types' => $serviceCount > 0 && isset($acTypesPerService[$index]) ?
-                              $acTypesPerService[$index] : []
+                'ac_types' => $acTypes
             ];
         }
 

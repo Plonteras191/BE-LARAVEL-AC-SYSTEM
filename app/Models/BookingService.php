@@ -11,4 +11,16 @@ class BookingService extends Model
     ];
 
     public $timestamps = false;
+
+    // Add relationship to BookingActype
+    public function acTypes()
+    {
+        return $this->hasMany(BookingActype::class);
+    }
+
+    // Maintain relationship to Booking
+    public function booking()
+    {
+        return $this->belongsTo(Booking::class);
+    }
 }
