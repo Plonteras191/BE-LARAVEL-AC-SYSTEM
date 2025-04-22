@@ -15,16 +15,18 @@ class RevenueHistoryController extends Controller
     public function index(Request $request)
     {
         // Get all revenue history entries, properly merged by booking
-        $mergedHistory = DB::table('revenue_history')
+        $mergedHistory = DB::table('revenue_history as rh')
+            ->join('bookings as b', 'rh.booking_id', '=', 'b.id')
+            ->join('booking_services as bs', 'b.id', '=', 'bs.booking_id')
             ->select(
-                'booking_id',
-                'revenue_date',
-                DB::raw('SUM(total_revenue) as total_revenue'),
-                // Get service types, ensuring they're combined properly
-                DB::raw('GROUP_CONCAT(DISTINCT service_type SEPARATOR ", ") as service_types')
+                'rh.booking_id',
+                'rh.revenue_date',
+                DB::raw('SUM(rh.total_revenue) as total_revenue'),
+                // Get service types from booking_services table
+                DB::raw('GROUP_CONCAT(DISTINCT bs.service_type SEPARATOR ", ") as service_types')
             )
-            ->groupBy('booking_id', 'revenue_date')
-            ->orderBy('revenue_date', 'desc')
+            ->groupBy('rh.booking_id', 'rh.revenue_date')
+            ->orderBy('rh.revenue_date', 'desc')
             ->get();
 
         // Calculate total amount across all records
@@ -61,7 +63,6 @@ class RevenueHistoryController extends Controller
                 // Initialize defaults
                 $grossRevenue = 0;
                 $netRevenue = 0;
-                $serviceTypes = [];
 
                 // If detailed information is provided (from Revenue.jsx)
                 if (isset($validatedData['appointment_details'])) {
@@ -69,28 +70,6 @@ class RevenueHistoryController extends Controller
                         if ($detail['id'] == $appointmentId) {
                             $grossRevenue = $detail['gross_revenue'] ?? 0;
                             $netRevenue = $detail['net_revenue'] ?? 0;
-
-                            // Get service info from the booking
-                            try {
-                                $bookingServices = DB::table('booking_services')
-                                    ->where('booking_id', $booking->id)
-                                    ->get();
-
-                                foreach ($bookingServices as $service) {
-                                    $serviceTypes[] = $service->service_type;
-                                }
-                            } catch (\Exception $e) {
-                                // If there's an error getting services, try other methods
-                                if ($booking->services) {
-                                    $services = json_decode($booking->services, true);
-                                    if (is_array($services)) {
-                                        foreach ($services as $service) {
-                                            $serviceTypes[] = $service['type'] ?? 'Unknown Service';
-                                        }
-                                    }
-                                }
-                            }
-
                             break;
                         }
                     }
@@ -104,12 +83,7 @@ class RevenueHistoryController extends Controller
                 $revenueHistory->revenue_date = $validatedData['revenue_date'];
                 $revenueHistory->total_revenue = $netRevenue; // Store net revenue
                 $revenueHistory->booking_id = $booking->id;
-                $revenueHistory->service_type = implode(', ', array_unique($serviceTypes));
                 $revenueHistory->save();
-
-                // Remove the status update that was causing the issue
-                // $booking->status = 'Processed';
-                // $booking->save();
             }
 
             DB::commit();
@@ -135,11 +109,11 @@ class RevenueHistoryController extends Controller
      */
     public function getServiceRevenueSummary()
     {
-        $summary = DB::table('revenue_history')
-            ->whereNotNull('service_type')
-            ->where('service_type', '!=', '')
-            ->select('service_type', DB::raw('SUM(total_revenue) as total'))
-            ->groupBy('service_type')
+        $summary = DB::table('revenue_history as rh')
+            ->join('bookings as b', 'rh.booking_id', '=', 'b.id')
+            ->join('booking_services as bs', 'b.id', '=', 'bs.booking_id')
+            ->select('bs.service_type', DB::raw('SUM(rh.total_revenue) as total'))
+            ->groupBy('bs.service_type')
             ->orderBy('total', 'desc')
             ->get();
 

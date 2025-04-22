@@ -143,3 +143,110 @@ class AlterRevenueHistoryAddBookingAndServiceType extends Migration
         });
     }
 }
+
+
+--UPDATED ACTYPE AC types are directly linked to specific services rather than just bookings.
+
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class UpdateBookingActypesAddServiceRelationship extends Migration
+{
+    public function up()
+    {
+        // First drop the existing booking_actypes table since we're restructuring it
+        Schema::dropIfExists('booking_actypes');
+
+        // Create the new booking_actypes table with service relationship
+        Schema::create('booking_actypes', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('booking_service_id')
+                  ->constrained('booking_services')
+                  ->onDelete('cascade');
+            $table->string('ac_type', 50);
+        });
+    }
+
+    public function down()
+    {
+        // Drop the new table
+        Schema::dropIfExists('booking_actypes');
+
+        // Recreate the original table structure if needed to roll back
+        Schema::create('booking_actypes', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('booking_id')
+                  ->constrained('bookings')
+                  ->onDelete('cascade');
+            $table->string('ac_type', 50);
+        });
+    }
+}
+
+--NEW ADDED REMOVE SERVICE_TYPE  IN REVENUE HISTORY
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class RemoveServiceTypeFromRevenueHistory extends Migration
+{
+    /**
+     * Run the migration.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        Schema::table('revenue_history', function (Blueprint $table) {
+            // Drop the service_type column if it exists
+            if (Schema::hasColumn('revenue_history', 'service_type')) {
+                $table->dropColumn('service_type');
+            }
+        });
+    }
+
+    /**
+     * Reverse the migration.
+     *
+     * @return void
+     */
+    public function down()
+    {
+        Schema::table('revenue_history', function (Blueprint $table) {
+            // Re-add the service_type column if migration is rolled back
+            if (!Schema::hasColumn('revenue_history', 'service_type')) {
+                $table->string('service_type')->nullable();
+            }
+        });
+    }
+}
+
+
+--NEW ADDED UNIQUE ON REVENUE HISTORY
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class AddUniqueConstraintToRevenueHistory extends Migration
+{
+    public function up()
+    {
+        Schema::table('revenue_history', function (Blueprint $table) {
+            $table->unique('booking_id');
+        });
+    }
+
+    public function down()
+    {
+        Schema::table('revenue_history', function (Blueprint $table) {
+            $table->dropUnique(['booking_id']);
+        });
+    }
+}
