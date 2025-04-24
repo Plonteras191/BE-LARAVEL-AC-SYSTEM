@@ -21,11 +21,11 @@ class RevenueHistoryController extends Controller
             ->select(
                 'rh.booking_id',
                 'rh.revenue_date',
-                DB::raw('SUM(rh.total_revenue) as total_revenue'),
+                'rh.total_revenue', // Keep the original total revenue without aggregating again
                 // Get service types from booking_services table
                 DB::raw('GROUP_CONCAT(DISTINCT bs.service_type SEPARATOR ", ") as service_types')
             )
-            ->groupBy('rh.booking_id', 'rh.revenue_date')
+            ->groupBy('rh.booking_id', 'rh.revenue_date', 'rh.total_revenue') // Include total_revenue in group by
             ->orderBy('rh.revenue_date', 'desc')
             ->get();
 
@@ -56,19 +56,17 @@ class RevenueHistoryController extends Controller
             // Begin transaction
             DB::beginTransaction();
 
-            // For each appointment, create a revenue record
-            foreach ($validatedData['appointments'] as $index => $appointmentId) {
+            // For each appointment (not for each service), create a revenue record
+            foreach ($validatedData['appointments'] as $appointmentId) {
                 $booking = Booking::findOrFail($appointmentId);
 
                 // Initialize defaults
-                $grossRevenue = 0;
                 $netRevenue = 0;
 
                 // If detailed information is provided (from Revenue.jsx)
                 if (isset($validatedData['appointment_details'])) {
                     foreach ($validatedData['appointment_details'] as $detail) {
                         if ($detail['id'] == $appointmentId) {
-                            $grossRevenue = $detail['gross_revenue'] ?? 0;
                             $netRevenue = $detail['net_revenue'] ?? 0;
                             break;
                         }
@@ -78,7 +76,7 @@ class RevenueHistoryController extends Controller
                     $netRevenue = $validatedData['total_revenue'] / count($validatedData['appointments']);
                 }
 
-                // Create revenue record
+                // Create only ONE revenue record per appointment regardless of number of services
                 $revenueHistory = new RevenueHistory();
                 $revenueHistory->revenue_date = $validatedData['revenue_date'];
                 $revenueHistory->total_revenue = $netRevenue; // Store net revenue
@@ -109,10 +107,15 @@ class RevenueHistoryController extends Controller
      */
     public function getServiceRevenueSummary()
     {
+        // Modified to avoid double-counting revenue
         $summary = DB::table('revenue_history as rh')
             ->join('bookings as b', 'rh.booking_id', '=', 'b.id')
             ->join('booking_services as bs', 'b.id', '=', 'bs.booking_id')
-            ->select('bs.service_type', DB::raw('SUM(rh.total_revenue) as total'))
+            ->select(
+                'bs.service_type',
+                // Use DISTINCT on booking_id to avoid counting the same booking multiple times
+                DB::raw('SUM(DISTINCT rh.total_revenue) as total')
+            )
             ->groupBy('bs.service_type')
             ->orderBy('total', 'desc')
             ->get();
