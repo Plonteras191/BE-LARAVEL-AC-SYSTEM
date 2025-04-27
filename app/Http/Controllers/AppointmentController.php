@@ -7,6 +7,8 @@ use App\Models\Booking;
 use App\Models\BookingService;
 use App\Models\BookingActype;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\AppointmentConfirmation;
 
 class AppointmentController extends Controller
 {
@@ -135,6 +137,20 @@ class AppointmentController extends Controller
             $booking->status = 'Accepted';
             $booking->save();
 
+            // Send confirmation email
+            try {
+                // Prepare data for email
+                $appointmentData = $this->prepareAppointmentDataForEmail($booking);
+
+                // Send email to customer
+                Mail::to($booking->email)->send(new AppointmentConfirmation($appointmentData));
+
+            } catch (\Exception $emailError) {
+                // Log the error but don't fail the request
+
+                // Continue with the response, but note the email wasn't sent
+            }
+
             return response()->json([
                 'id' => $booking->id,
                 'status' => $booking->status,
@@ -197,5 +213,33 @@ class AppointmentController extends Controller
             'status' => $booking->status,
             'services' => json_encode($servicesData)
         ]);
+    }
+
+    // Helper method to prepare data for email
+    private function prepareAppointmentDataForEmail($booking)
+    {
+        $services = BookingService::where('booking_id', $booking->id)->get();
+        $formattedServices = [];
+
+        foreach ($services as $service) {
+            $acTypes = BookingActype::where('booking_service_id', $service->id)
+                ->pluck('ac_type')
+                ->toArray();
+
+            $formattedServices[] = [
+                'type' => $service->service_type,
+                'date' => $service->appointment_date,
+                'ac_types' => $acTypes
+            ];
+        }
+
+        return [
+            'id' => $booking->id,
+            'name' => $booking->name,
+            'phone' => $booking->phone,
+            'email' => $booking->email,
+            'address' => $booking->complete_address,
+            'services' => $formattedServices
+        ];
     }
 }
