@@ -1,9 +1,8 @@
-{{-- resources/views/emails/appointment-confirmation.blade.php --}}
-{{-- This is a Blade template for the appointment confirmation email. --}}
+{{-- resources/views/emails/appointment-rejection.blade.php --}}
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Appointment Confirmation</title>
+    <title>Appointment Rejection</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -14,7 +13,7 @@
             padding: 20px;
         }
         .header {
-            background-color: #4CAF50;
+            background-color: #e74c3c;
             color: white;
             padding: 15px;
             text-align: center;
@@ -39,7 +38,7 @@
         }
         .button {
             display: inline-block;
-            background-color: #4CAF50;
+            background-color: #3498db;
             color: white;
             padding: 10px 20px;
             text-decoration: none;
@@ -50,15 +49,13 @@
 </head>
 <body>
     <div class="header">
-        <h1>Appointment Confirmed</h1>
+        <h1>Appointment Update</h1>
     </div>
 
     <div class="content">
         <p>Dear {{ $appointmentData['name'] }},</p>
 
-        <p>We're pleased to confirm that your appointment has been accepted and scheduled. Here are the details:</p>
-
-        <h3>Appointment ID: #{{ $appointmentData['id'] }}</h3>
+        <p>We regret to inform you that we are unable to accommodate your recent appointment request (ID: #{{ $appointmentData['id'] }}).</p>
 
         <h3>Service Details:</h3>
         @foreach($appointmentData['services'] as $index => $service)
@@ -71,20 +68,16 @@
             </div>
         @endforeach
 
-        <h3>Your Information:</h3>
-        <p><strong>Name:</strong> {{ $appointmentData['name'] }}</p>
-        <p><strong>Phone:</strong> {{ $appointmentData['phone'] }}</p>
-        <p><strong>Email:</strong> {{ $appointmentData['email'] }}</p>
-        <p><strong>Address:</strong> {{ $appointmentData['address'] }}</p>
+        <p>This may be due to scheduling conflicts or availability issues. We sincerely apologize for any inconvenience this may cause.</p>
 
-        <p>Our technician will arrive at your location on the scheduled date. Please ensure someone is available to provide access to the premises.</p>
+        <p>You're welcome to submit a new appointment request with alternative dates that might work better for you.</p>
 
-        <p>If you need to reschedule or have any questions, please contact us as soon as possible.</p>
+        <p>If you have any questions or would like assistance in scheduling a new appointment, please don't hesitate to contact us.</p>
 
-        <p>Thank you for choosing our services!</p>
+        <p>Thank you for your understanding.</p>
 
         <div style="text-align: center;">
-            <a href="{{ url('/') }}" class="button">Visit Our Website</a>
+            <a href="{{ url('/') }}" class="button">Book New Appointment</a>
         </div>
     </div>
 

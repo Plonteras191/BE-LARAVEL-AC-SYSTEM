@@ -9,6 +9,7 @@ use App\Models\BookingActype;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\AppointmentConfirmation;
+use App\Mail\AppointmentRejection;
 
 class AppointmentController extends Controller
 {
@@ -55,10 +56,21 @@ class AppointmentController extends Controller
         try {
             $booking = Booking::findOrFail($id);
 
+            // Prepare data for email before changing status
+            $appointmentData = $this->prepareAppointmentDataForEmail($booking);
+
             // Soft reject - just update status instead of deleting
             // This keeps our database records but frees up the service slots
             $booking->status = 'Rejected';
             $booking->save();
+
+            // Send rejection email
+            try {
+                Mail::to($booking->email)->send(new AppointmentRejection($appointmentData));
+            } catch (\Exception $emailError) {
+                // Log the error but don't fail the request
+                // You might want to add proper logging here
+            }
 
             return response()->json([
                 'success' => true,
@@ -147,8 +159,7 @@ class AppointmentController extends Controller
 
             } catch (\Exception $emailError) {
                 // Log the error but don't fail the request
-
-                // Continue with the response, but note the email wasn't sent
+                // Add proper logging here
             }
 
             return response()->json([
