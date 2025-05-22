@@ -15,7 +15,6 @@ Route::get('/user', [AuthController::class, 'user'])->middleware('auth.admin');
 // Booking Routes
 Route::get('/getAvailableDates', [BookingController::class, 'getAvailableDates']);
 Route::post('/booking', [BookingController::class, 'store']);
-// New route for checking specific dates
 Route::get('/checkDateAvailability', [BookingController::class, 'checkDateAvailability']);
 
 // Protected Admin Routes
@@ -23,9 +22,14 @@ Route::middleware('auth.admin')->group(function () {
     // Appointment Routes (admin)
     Route::get('/appointments', [AppointmentController::class, 'index']);
     Route::delete('/appointments/{id}', [AppointmentController::class, 'destroy']);
-    Route::put('/appointments/{id}', [AppointmentController::class, 'reschedule'])->where('action', 'reschedule');
+    Route::put('/appointments/{id}/reschedule', [AppointmentController::class, 'reschedule']);
     Route::post('/appointments/{id}/accept', [AppointmentController::class, 'accept']);
     Route::post('/appointments/{id}/complete', [AppointmentController::class, 'complete']);
+
+    // Technician management routes
+    Route::get('/appointments/technicians', [AppointmentController::class, 'getTechnicians']);
+    Route::post('/appointments/{id}/assign-technician', [AppointmentController::class, 'assignTechnician']);
+    Route::post('/appointments/{id}/remove-technician', [AppointmentController::class, 'removeTechnician']);
 
     // Revenue History Routes
     Route::get('/revenue-history', [RevenueHistoryController::class, 'index']);

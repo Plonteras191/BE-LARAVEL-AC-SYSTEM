@@ -6,8 +6,12 @@ use Illuminate\Http\Request;
 use App\Models\Booking;
 use App\Models\BookingService;
 use App\Models\BookingActype;
+use App\Models\Technician;
+use App\Models\BookingStatus;
+use App\Models\AcType;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use App\Mail\AppointmentConfirmation;
 use App\Mail\AppointmentRejection;
 
@@ -16,34 +20,33 @@ class AppointmentController extends Controller
     // Get all appointments (admin view)
     public function index()
     {
-        $bookings = Booking::all();
+        $bookings = Booking::with(['customer', 'status', 'services.acTypes', 'technicians'])->get();
         $formattedBookings = [];
 
         foreach ($bookings as $booking) {
-            $services = BookingService::where('booking_id', $booking->id)->get();
             $servicesData = [];
 
-            foreach ($services as $service) {
-                // Get AC types for this specific service
-                $acTypes = BookingActype::where('booking_service_id', $service->id)
-                    ->pluck('ac_type')
-                    ->toArray();
+            foreach ($booking->services as $service) {
+                $acTypeNames = $service->acTypes->pluck('type_name')->toArray();
 
                 $servicesData[] = [
                     'type' => $service->service_type,
                     'date' => $service->appointment_date,
-                    'ac_types' => $acTypes
+                    'ac_types' => $acTypeNames
                 ];
             }
 
             $formattedBookings[] = [
                 'id' => $booking->id,
-                'name' => $booking->name,
-                'phone' => $booking->phone,
-                'email' => $booking->email,
-                'complete_address' => $booking->complete_address,
-                'status' => $booking->status,
-                'services' => json_encode($servicesData)
+                'name' => $booking->customer->name,
+                'phone' => $booking->customer->phone,
+                'email' => $booking->customer->email,
+                'complete_address' => $booking->customer->complete_address,
+                'status' => $booking->status->status_name,
+                'status_id' => $booking->status_id,
+                'technicians' => $booking->technicians->pluck('name')->toArray(),
+                'services' => json_encode($servicesData),
+                'created_at' => $booking->created_at
             ];
         }
 
@@ -54,22 +57,32 @@ class AppointmentController extends Controller
     public function destroy($id)
     {
         try {
-            $booking = Booking::findOrFail($id);
+            $booking = Booking::with(['customer', 'services.acTypes'])->findOrFail($id);
 
             // Prepare data for email before changing status
             $appointmentData = $this->prepareAppointmentDataForEmail($booking);
 
-            // Soft reject - just update status instead of deleting
-            // This keeps our database records but frees up the service slots
-            $booking->status = 'Rejected';
+            // Get the rejected status ID (assuming you have a 'Rejected' status)
+            $rejectedStatus = BookingStatus::where('status_name', 'Rejected')->first();
+            if (!$rejectedStatus) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Rejected status not found in database'
+                ], 500);
+            }
+
+            // Update status to rejected
+            $booking->status_id = $rejectedStatus->id;
             $booking->save();
 
             // Send rejection email
             try {
-                Mail::to($booking->email)->send(new AppointmentRejection($appointmentData));
+                if ($booking->customer->email) {
+                    Mail::to($booking->customer->email)->send(new AppointmentRejection($appointmentData));
+                }
             } catch (\Exception $emailError) {
                 // Log the error but don't fail the request
-                // You might want to add proper logging here
+                Log::error('Failed to send rejection email: ' . $emailError->getMessage());
             }
 
             return response()->json([
@@ -94,9 +107,11 @@ class AppointmentController extends Controller
             $newDate = $request->input('new_date');
 
             // Check if the new date doesn't exceed our limit (2 services per day)
+            $acceptedStatus = BookingStatus::whereIn('status_name', ['Pending', 'Accepted'])->pluck('id');
+
             $existingCount = BookingService::whereDate('appointment_date', $newDate)
                 ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
-                ->whereIn('bookings.status', ['Pending', 'Accepted'])
+                ->whereIn('bookings.status_id', $acceptedStatus)
                 ->where('booking_services.booking_id', '!=', $id) // Exclude current booking
                 ->count();
 
@@ -122,20 +137,21 @@ class AppointmentController extends Controller
     }
 
     // Accept an appointment
-    public function accept($id)
+    public function accept(Request $request, $id)
     {
         try {
-            $booking = Booking::findOrFail($id);
+            $booking = Booking::with(['customer', 'services'])->findOrFail($id);
 
             // Before accepting, recheck date availability to prevent conflicts
-            $services = BookingService::where('booking_id', $id)->get();
-            foreach ($services as $service) {
+            $acceptedStatus = BookingStatus::whereIn('status_name', ['Pending', 'Accepted'])->pluck('id');
+
+            foreach ($booking->services as $service) {
                 $date = $service->appointment_date;
 
                 // Count existing services on this date (excluding this booking)
                 $existingCount = BookingService::whereDate('appointment_date', $date)
                     ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
-                    ->whereIn('bookings.status', ['Pending', 'Accepted'])
+                    ->whereIn('bookings.status_id', $acceptedStatus)
                     ->where('booking_services.booking_id', '!=', $id)
                     ->count();
 
@@ -146,8 +162,22 @@ class AppointmentController extends Controller
                 }
             }
 
-            $booking->status = 'Accepted';
+            // Get the accepted status ID
+            $acceptedStatusRecord = BookingStatus::where('status_name', 'Accepted')->first();
+            if (!$acceptedStatusRecord) {
+                return response()->json([
+                    'error' => 'Accepted status not found in database'
+                ], 500);
+            }
+
+            $booking->status_id = $acceptedStatusRecord->id;
             $booking->save();
+
+            // Handle technician assignment if provided
+            $technicianNames = $request->input('technician_names', []);
+            if (!empty($technicianNames)) {
+                $this->assignTechniciansToBooking($booking, $technicianNames);
+            }
 
             // Send confirmation email
             try {
@@ -155,18 +185,21 @@ class AppointmentController extends Controller
                 $appointmentData = $this->prepareAppointmentDataForEmail($booking);
 
                 // Send email to customer
-                Mail::to($booking->email)->send(new AppointmentConfirmation($appointmentData));
+                if ($booking->customer->email) {
+                    Mail::to($booking->customer->email)->send(new AppointmentConfirmation($appointmentData));
+                }
 
             } catch (\Exception $emailError) {
-                // Log the error but don't fail the request
-                // Add proper logging here
+                Log::error('Failed to send confirmation email: ' . $emailError->getMessage());
             }
 
             return response()->json([
                 'id' => $booking->id,
-                'status' => $booking->status,
-                'name' => $booking->name,
-                'email' => $booking->email,
+                'status' => $acceptedStatusRecord->status_name,
+                'status_id' => $booking->status_id,
+                'name' => $booking->customer->name,
+                'email' => $booking->customer->email,
+                'technicians' => $booking->technicians->pluck('name')->toArray(),
                 'message' => 'Appointment accepted successfully'
             ]);
 
@@ -182,7 +215,16 @@ class AppointmentController extends Controller
     {
         try {
             $booking = Booking::findOrFail($id);
-            $booking->status = 'Completed';
+
+            // Get the completed status ID
+            $completedStatus = BookingStatus::where('status_name', 'Completed')->first();
+            if (!$completedStatus) {
+                return response()->json([
+                    'error' => 'Completed status not found in database'
+                ], 500);
+            }
+
+            $booking->status_id = $completedStatus->id;
             $booking->save();
 
             // Return the completed appointment data
@@ -195,62 +237,114 @@ class AppointmentController extends Controller
         }
     }
 
+    // Assign or update technicians for a booking
+    public function assignTechnicians(Request $request, $id)
+    {
+        try {
+            $booking = Booking::findOrFail($id);
+            $technicianNames = $request->input('technician_names', []);
+
+            $this->assignTechniciansToBooking($booking, $technicianNames);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Technicians assigned successfully',
+                'technicians' => $booking->fresh()->technicians->pluck('name')->toArray()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Error assigning technicians: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Get all technicians for dropdown
+    public function getTechnicians()
+    {
+        $technicians = Technician::select('id', 'name')->get();
+        return response()->json($technicians);
+    }
+
+    // Helper function to assign technicians to a booking
+    private function assignTechniciansToBooking($booking, $technicianNames)
+    {
+        if (empty($technicianNames)) {
+            return;
+        }
+
+        // Clear existing technician assignments
+        $booking->technicians()->detach();
+
+        $technicianIds = [];
+        foreach ($technicianNames as $name) {
+            $name = trim($name);
+            if (!empty($name)) {
+                // Find or create technician
+                $technician = Technician::firstOrCreate(['name' => $name]);
+                $technicianIds[] = $technician->id;
+            }
+        }
+
+        // Assign technicians to booking
+        if (!empty($technicianIds)) {
+            $booking->technicians()->attach($technicianIds);
+        }
+    }
+
     // Helper function to get formatted booking data
     private function getFormattedBooking($id)
     {
-        $booking = Booking::findOrFail($id);
-        $services = BookingService::where('booking_id', $id)->get();
+        $booking = Booking::with(['customer', 'status', 'services.acTypes', 'technicians'])->findOrFail($id);
         $servicesData = [];
 
-        foreach ($services as $service) {
-            // Get AC types for this specific service
-            $acTypes = BookingActype::where('booking_service_id', $service->id)
-                ->pluck('ac_type')
-                ->toArray();
+        foreach ($booking->services as $service) {
+            $acTypeNames = $service->acTypes->pluck('type_name')->toArray();
 
             $servicesData[] = [
                 'type' => $service->service_type,
                 'date' => $service->appointment_date,
-                'ac_types' => $acTypes
+                'ac_types' => $acTypeNames
             ];
         }
 
         return response()->json([
             'id' => $booking->id,
-            'name' => $booking->name,
-            'phone' => $booking->phone,
-            'email' => $booking->email,
-            'complete_address' => $booking->complete_address,
-            'status' => $booking->status,
-            'services' => json_encode($servicesData)
+            'name' => $booking->customer->name,
+            'phone' => $booking->customer->phone,
+            'email' => $booking->customer->email,
+            'complete_address' => $booking->customer->complete_address,
+            'status' => $booking->status->status_name,
+            'status_id' => $booking->status_id,
+            'technicians' => $booking->technicians->pluck('name')->toArray(),
+            'services' => json_encode($servicesData),
+            'created_at' => $booking->created_at
         ]);
     }
 
     // Helper method to prepare data for email
     private function prepareAppointmentDataForEmail($booking)
     {
-        $services = BookingService::where('booking_id', $booking->id)->get();
         $formattedServices = [];
 
-        foreach ($services as $service) {
-            $acTypes = BookingActype::where('booking_service_id', $service->id)
-                ->pluck('ac_type')
-                ->toArray();
+        foreach ($booking->services as $service) {
+            $acTypeNames = $service->acTypes->pluck('type_name')->toArray();
 
             $formattedServices[] = [
                 'type' => $service->service_type,
                 'date' => $service->appointment_date,
-                'ac_types' => $acTypes
+                'ac_types' => $acTypeNames
             ];
         }
 
         return [
             'id' => $booking->id,
-            'name' => $booking->name,
-            'phone' => $booking->phone,
-            'email' => $booking->email,
-            'address' => $booking->complete_address,
-            'services' => $formattedServices
+            'name' => $booking->customer->name,
+            'phone' => $booking->customer->phone,
+            'email' => $booking->customer->email,
+            'address' => $booking->customer->complete_address,
+            'services' => $formattedServices,
+            'technicians' => $booking->technicians->pluck('name')->toArray()
         ];
     }
 }
