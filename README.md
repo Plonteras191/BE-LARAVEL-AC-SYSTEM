@@ -14,12 +14,13 @@ This README describes how to set up and run the **Laravel 10** backend for the A
 
 - [Prerequisites](#prerequisites)  
 - [Installing Dependencies](#installing-dependencies)  
-- [Environment Configuration](#environment-configuration)  
-- [Generate Application Key](#generate-application-key)  
+- [Environment Configuration](#environment-configuration)   
 - [Database Setup & Migrations](#database-setup--migrations)  
 - [Running the Development Server](#running-the-development-server)  
-- [Common Artisan Commands](#common-artisan-commands)  
-- [Troubleshooting](#troubleshooting)  
+- [Common Artisan Commands](#common-artisan-commands)
+- [Github REPO](# GITHUB-REPO)  
+
+ 
 
 ---
 
@@ -47,6 +48,8 @@ Before you begin, confirm that your system has the following installed:
 composer self-update
 composer install --no-interaction
 
+## Environment Configuration
+
 3. Copy the example environment file to create a local .env:
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
@@ -55,13 +58,19 @@ DB_DATABASE=system_ac  <= YOUR OWN MYSQL DATABASE NAME USING XAMPP
 DB_USERNAME=root
 DB_PASSWORD=
 
+## Database Setup & Migrations
 4. RUN THIS COMMAND 
 # php artisan migrate
 # php artisan db:seed --class=Database\Seeders\BookingStatusSeeder
 
+## Common Artisan Commands
+
 5. START THE LARAVEL development server
 # php artisan serve
 # you should see something like this --host=127.0.0.1 --port=8000
+
+## GITHUB REPO
+# https://github.com/Plonteras191/BE-LARAVEL-AC-SYSTEM.git
 
 # THATS IT ENJOY
 
