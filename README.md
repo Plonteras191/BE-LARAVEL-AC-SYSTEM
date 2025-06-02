@@ -33,8 +33,7 @@ Before you begin, confirm that your system has the following installed:
 - **Composer ≥ 2.0**  
 - **MySQL (or MariaDB) ≥ 5.7 / 10.2**  
 - **Git** (for cloning the repository)  
-- (Optional) **XAMPP / WAMP / Laragon** if you prefer a bundled Apache+PHP+MySQL stack on Windows
-
+- **XAMPP** <= PREFER
 ---
 
 ## Installing Dependencies
