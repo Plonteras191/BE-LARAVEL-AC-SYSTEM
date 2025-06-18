@@ -7,7 +7,7 @@ use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\RevenueHistoryController;
 use App\Http\Controllers\AuthController;
 
-// Auth Routes
+// Auth Routes //
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth.admin');
 Route::get('/user', [AuthController::class, 'user'])->middleware('auth.admin');
