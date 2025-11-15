@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use App\Models\Booking;
 use App\Models\BookingService;
 use App\Models\BookingActype;
@@ -14,18 +15,29 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 use App\Mail\AppointmentConfirmation;
 use App\Mail\AppointmentRejection;
+use Illuminate\Database\Eloquent\Collection;
 
 class AppointmentController extends Controller
 {
-    // Get all appointments (admin view)
-    public function index()
+    // Define booking limit as a constant for consistency with BookingController
+    const DAILY_BOOKING_LIMIT = 5;
+
+    /**
+     * Get all appointments (admin view)
+     *
+     * @return JsonResponse
+     */
+    public function index(): JsonResponse
     {
+        /** @var Collection<int, Booking> $bookings */
         $bookings = Booking::with(['customer', 'status', 'services.acTypes', 'technicians'])->get();
         $formattedBookings = [];
 
+        /** @var Booking $booking */
         foreach ($bookings as $booking) {
             $servicesData = [];
 
+            /** @var BookingService $service */
             foreach ($booking->services as $service) {
                 $acTypeNames = $service->acTypes->pluck('type_name')->toArray();
 
@@ -53,10 +65,16 @@ class AppointmentController extends Controller
         return response()->json($formattedBookings);
     }
 
-    // Delete (reject) an appointment
-    public function destroy($id)
+    /**
+     * Delete (reject) an appointment
+     *
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function destroy($id): JsonResponse
     {
         try {
+            /** @var Booking $booking */
             $booking = Booking::with(['customer', 'services.acTypes'])->findOrFail($id);
 
             // Prepare data for email before changing status
@@ -98,26 +116,35 @@ class AppointmentController extends Controller
         }
     }
 
-    // Reschedule a service
-    public function reschedule(Request $request, $id)
+    /**
+     * Reschedule a service
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function reschedule(Request $request, $id): JsonResponse
     {
         try {
+            /** @var Booking $booking */
             $booking = Booking::findOrFail($id);
             $serviceName = $request->input('service_name');
             $newDate = $request->input('new_date');
 
-            // Check if the new date doesn't exceed our limit (2 services per day)
+            // Check if the new date doesn't exceed our limit (5 customers per day)
             $acceptedStatus = BookingStatus::whereIn('status_name', ['Pending', 'Accepted'])->pluck('id');
 
-            $existingCount = BookingService::whereDate('appointment_date', $newDate)
+            $existingCount = DB::table('booking_services')
                 ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
                 ->whereIn('bookings.status_id', $acceptedStatus)
+                ->whereDate('appointment_date', $newDate)
                 ->where('booking_services.booking_id', '!=', $id) // Exclude current booking
-                ->count();
+                ->distinct('bookings.id')
+                ->count('bookings.id');
 
-            if ($existingCount >= 2) {
+            if ($existingCount >= self::DAILY_BOOKING_LIMIT) {
                 return response()->json([
-                    'error' => "Date $newDate is not available. Service limit reached."
+                    'error' => "Date $newDate is not available. Booking limit reached."
                 ], 400);
             }
 
@@ -136,28 +163,38 @@ class AppointmentController extends Controller
         }
     }
 
-    // Accept an appointment
-    public function accept(Request $request, $id)
+    /**
+     * Accept an appointment
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function accept(Request $request, $id): JsonResponse
     {
         try {
+            /** @var Booking $booking */
             $booking = Booking::with(['customer', 'services'])->findOrFail($id);
 
             // Before accepting, recheck date availability to prevent conflicts
             $acceptedStatus = BookingStatus::whereIn('status_name', ['Pending', 'Accepted'])->pluck('id');
 
+            /** @var BookingService $service */
             foreach ($booking->services as $service) {
                 $date = $service->appointment_date;
 
-                // Count existing services on this date (excluding this booking)
-                $existingCount = BookingService::whereDate('appointment_date', $date)
+                // Count existing bookings on this date (excluding this booking) - count unique customers
+                $existingCount = DB::table('booking_services')
                     ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
                     ->whereIn('bookings.status_id', $acceptedStatus)
+                    ->whereDate('appointment_date', $date)
                     ->where('booking_services.booking_id', '!=', $id)
-                    ->count();
+                    ->distinct('bookings.id')
+                    ->count('bookings.id');
 
-                if ($existingCount >= 2) {
+                if ($existingCount >= self::DAILY_BOOKING_LIMIT) {
                     return response()->json([
-                        'error' => "Cannot accept booking. Date $date now exceeds service limit."
+                        'error' => "Cannot accept booking. Date $date now exceeds booking limit."
                     ], 400);
                 }
             }
@@ -210,10 +247,16 @@ class AppointmentController extends Controller
         }
     }
 
-    // Complete an appointment
-    public function complete($id)
+    /**
+     * Complete an appointment
+     *
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function complete($id): JsonResponse
     {
         try {
+            /** @var Booking $booking */
             $booking = Booking::findOrFail($id);
 
             // Get the completed status ID
@@ -237,10 +280,17 @@ class AppointmentController extends Controller
         }
     }
 
-    // Assign or update technicians for a booking
-    public function assignTechnicians(Request $request, $id)
+    /**
+     * Assign or update technicians for a booking
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function assignTechnicians(Request $request, $id): JsonResponse
     {
         try {
+            /** @var Booking $booking */
             $booking = Booking::findOrFail($id);
             $technicianNames = $request->input('technician_names', []);
 
@@ -259,15 +309,25 @@ class AppointmentController extends Controller
         }
     }
 
-    // Get all technicians for dropdown
-    public function getTechnicians()
+    /**
+     * Get all technicians for dropdown
+     *
+     * @return JsonResponse
+     */
+    public function getTechnicians(): JsonResponse
     {
         $technicians = Technician::select('id', 'name')->get();
         return response()->json($technicians);
     }
 
-    // Helper function to assign technicians to a booking
-    private function assignTechniciansToBooking($booking, $technicianNames)
+    /**
+     * Helper function to assign technicians to a booking
+     *
+     * @param Booking $booking
+     * @param array $technicianNames
+     * @return void
+     */
+    private function assignTechniciansToBooking(Booking $booking, array $technicianNames): void
     {
         if (empty($technicianNames)) {
             return;
@@ -292,12 +352,19 @@ class AppointmentController extends Controller
         }
     }
 
-    // Helper function to get formatted booking data
-    private function getFormattedBooking($id)
+    /**
+     * Helper function to get formatted booking data
+     *
+     * @param int $id
+     * @return JsonResponse
+     */
+    private function getFormattedBooking($id): JsonResponse
     {
+        /** @var Booking $booking */
         $booking = Booking::with(['customer', 'status', 'services.acTypes', 'technicians'])->findOrFail($id);
         $servicesData = [];
 
+        /** @var BookingService $service */
         foreach ($booking->services as $service) {
             $acTypeNames = $service->acTypes->pluck('type_name')->toArray();
 
@@ -322,11 +389,17 @@ class AppointmentController extends Controller
         ]);
     }
 
-    // Helper method to prepare data for email
-    private function prepareAppointmentDataForEmail($booking)
+    /**
+     * Helper method to prepare data for email
+     *
+     * @param Booking $booking
+     * @return array
+     */
+    private function prepareAppointmentDataForEmail(Booking $booking): array
     {
         $formattedServices = [];
 
+        /** @var BookingService $service */
         foreach ($booking->services as $service) {
             $acTypeNames = $service->acTypes->pluck('type_name')->toArray();
 
