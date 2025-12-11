@@ -43,7 +43,7 @@ class BookingController extends Controller
         $bookedDates = DB::table('booking_services')
             ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
             ->join('booking_statuses', 'bookings.status_id', '=', 'booking_statuses.id')
-            ->whereIn('booking_statuses.status_name', ['Pending', 'Accepted'])
+            ->where('booking_statuses.status_name', 'Accepted')
             ->whereDate('appointment_date', '>=', $startDate)
             ->whereDate('appointment_date', '<=', $endDate)
             ->select('appointment_date', DB::raw('COUNT(DISTINCT bookings.id) as booking_count'))
@@ -94,7 +94,7 @@ class BookingController extends Controller
             $count = DB::table('booking_services')
                 ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
                 ->join('booking_statuses', 'bookings.status_id', '=', 'booking_statuses.id')
-                ->whereIn('booking_statuses.status_name', ['Pending', 'Accepted'])
+                ->where('booking_statuses.status_name', 'Accepted')
                 ->whereDate('appointment_date', $date)
                 ->distinct('bookings.id')
                 ->count('bookings.id');
@@ -140,7 +140,7 @@ class BookingController extends Controller
                 $existingBookingCount = DB::table('booking_services')
                     ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
                     ->join('booking_statuses', 'bookings.status_id', '=', 'booking_statuses.id')
-                    ->whereIn('booking_statuses.status_name', ['Pending', 'Accepted'])
+                    ->where('booking_statuses.status_name', 'Accepted')
                     ->whereDate('appointment_date', $date)
                     ->distinct('bookings.id')
                     ->count('bookings.id');
@@ -343,7 +343,7 @@ class BookingController extends Controller
             ->join('customers', 'bookings.customer_id', '=', 'customers.id')
             ->join('booking_statuses', 'bookings.status_id', '=', 'booking_statuses.id')
             ->whereDate('appointment_date', $date)
-            ->whereIn('booking_statuses.status_name', ['Pending', 'Accepted'])
+            ->where('booking_statuses.status_name', 'Accepted')
             ->select(
                 'customers.name',
                 'customers.phone',
@@ -379,7 +379,7 @@ class BookingController extends Controller
             $booking = Booking::with(['customer', 'services'])->findOrFail($id);
 
             // Before accepting, recheck date availability to prevent conflicts
-            $acceptedStatus = BookingStatus::whereIn('status_name', ['Pending', 'Accepted'])->pluck('id');
+            $acceptedStatus = BookingStatus::where('status_name', 'Accepted')->pluck('id');
 
             foreach ($booking->services as $service) {
                 $date = $service->appointment_date;
@@ -455,7 +455,7 @@ class BookingController extends Controller
     }
 
     /**
-     * Delete (reject) an appointment
+     * Cancel an appointment
      *
      * @param int $id
      * @return JsonResponse
@@ -468,38 +468,38 @@ class BookingController extends Controller
             // Prepare data for email before changing status
             $appointmentData = $this->prepareAppointmentDataForEmail($booking);
 
-            // Get the rejected status ID (assuming you have a 'Rejected' status)
-            $rejectedStatus = BookingStatus::where('status_name', 'Rejected')->first();
-            if (!$rejectedStatus) {
+            // Get the cancelled status ID
+            $cancelledStatus = BookingStatus::where('status_name', 'Cancelled')->first();
+            if (!$cancelledStatus) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Rejected status not found in database'
+                    'message' => 'Cancelled status not found in database'
                 ], 500);
             }
 
-            // Update status to rejected
-            $booking->status_id = $rejectedStatus->id;
+            // Update status to cancelled
+            $booking->status_id = $cancelledStatus->id;
             $booking->save();
 
-            // Send rejection email
+            // Send cancellation email
             try {
                 if ($booking->customer->email) {
                     Mail::to($booking->customer->email)->send(new AppointmentRejection($appointmentData));
                 }
             } catch (\Exception $emailError) {
                 // Log the error but don't fail the request
-                Log::error('Failed to send rejection email: ' . $emailError->getMessage());
+                Log::error('Failed to send cancellation email: ' . $emailError->getMessage());
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Appointment rejected successfully'
+                'message' => 'Appointment cancelled successfully'
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error rejecting appointment: ' . $e->getMessage()
+                'message' => 'Error cancelling appointment: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -519,7 +519,7 @@ class BookingController extends Controller
             $newDate = $request->input('new_date');
 
             // Check if the new date doesn't exceed our limit (5 customers per day)
-            $acceptedStatus = BookingStatus::whereIn('status_name', ['Pending', 'Accepted'])->pluck('id');
+            $acceptedStatus = BookingStatus::where('status_name', 'Accepted')->pluck('id');
 
             $existingCount = DB::table('booking_services')
                 ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')

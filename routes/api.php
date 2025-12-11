@@ -25,6 +25,7 @@ Route::middleware('auth.admin')->group(function () {
     Route::put('/appointments/{id}/reschedule', [AppointmentController::class, 'reschedule']);
     Route::post('/appointments/{id}/accept', [AppointmentController::class, 'accept']);
     Route::post('/appointments/{id}/complete', [AppointmentController::class, 'complete']);
+    Route::post('/appointments/{id}/return-to-pending', [AppointmentController::class, 'returnToPending']);
 
     // Technician management routes
     Route::get('/appointments/technicians', [AppointmentController::class, 'getTechnicians']);

@@ -13,7 +13,7 @@ class BookingStatusSeeder extends Seeder
             'Pending',
             'Accepted',
             'Completed',
-            'Rejected'
+            'Cancelled'
         ];
 
         foreach ($statuses as $status) {

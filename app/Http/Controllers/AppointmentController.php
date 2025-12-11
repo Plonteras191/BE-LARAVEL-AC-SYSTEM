@@ -66,7 +66,7 @@ class AppointmentController extends Controller
     }
 
     /**
-     * Delete (reject) an appointment
+     * Cancel an appointment
      *
      * @param int $id
      * @return JsonResponse
@@ -80,38 +80,38 @@ class AppointmentController extends Controller
             // Prepare data for email before changing status
             $appointmentData = $this->prepareAppointmentDataForEmail($booking);
 
-            // Get the rejected status ID (assuming you have a 'Rejected' status)
-            $rejectedStatus = BookingStatus::where('status_name', 'Rejected')->first();
-            if (!$rejectedStatus) {
+            // Get the cancelled status ID
+            $cancelledStatus = BookingStatus::where('status_name', 'Cancelled')->first();
+            if (!$cancelledStatus) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Rejected status not found in database'
+                    'message' => 'Cancelled status not found in database'
                 ], 500);
             }
 
-            // Update status to rejected
-            $booking->status_id = $rejectedStatus->id;
+            // Update status to cancelled
+            $booking->status_id = $cancelledStatus->id;
             $booking->save();
 
-            // Send rejection email
+            // Send cancellation email
             try {
                 if ($booking->customer->email) {
                     Mail::to($booking->customer->email)->send(new AppointmentRejection($appointmentData));
                 }
             } catch (\Exception $emailError) {
                 // Log the error but don't fail the request
-                Log::error('Failed to send rejection email: ' . $emailError->getMessage());
+                Log::error('Failed to send cancellation email: ' . $emailError->getMessage());
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Appointment rejected successfully'
+                'message' => 'Appointment cancelled successfully'
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error rejecting appointment: ' . $e->getMessage()
+                'message' => 'Error cancelling appointment: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -132,7 +132,7 @@ class AppointmentController extends Controller
             $newDate = $request->input('new_date');
 
             // Check if the new date doesn't exceed our limit (5 customers per day)
-            $acceptedStatus = BookingStatus::whereIn('status_name', ['Pending', 'Accepted'])->pluck('id');
+            $acceptedStatus = BookingStatus::where('status_name', 'Accepted')->pluck('id');
 
             $existingCount = DB::table('booking_services')
                 ->join('bookings', 'booking_services.booking_id', '=', 'bookings.id')
@@ -177,7 +177,7 @@ class AppointmentController extends Controller
             $booking = Booking::with(['customer', 'services'])->findOrFail($id);
 
             // Before accepting, recheck date availability to prevent conflicts
-            $acceptedStatus = BookingStatus::whereIn('status_name', ['Pending', 'Accepted'])->pluck('id');
+            $acceptedStatus = BookingStatus::where('status_name', 'Accepted')->pluck('id');
 
             /** @var BookingService $service */
             foreach ($booking->services as $service) {
@@ -276,6 +276,47 @@ class AppointmentController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Error completing appointment: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Return an accepted appointment back to pending status
+     *
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function returnToPending($id): JsonResponse
+    {
+        try {
+            /** @var Booking $booking */
+            $booking = Booking::findOrFail($id);
+
+            // Get the pending status ID
+            $pendingStatus = BookingStatus::where('status_name', 'Pending')->first();
+            if (!$pendingStatus) {
+                return response()->json([
+                    'error' => 'Pending status not found in database'
+                ], 500);
+            }
+
+            // Only allow returning from Accepted status
+            if ($booking->status->status_name !== 'Accepted') {
+                return response()->json([
+                    'error' => 'Only accepted appointments can be returned to pending'
+                ], 400);
+            }
+
+            // Update status to pending
+            $booking->status_id = $pendingStatus->id;
+            $booking->save();
+
+            // Return the updated appointment data
+            return $this->getFormattedBooking($id);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Error returning appointment to pending: ' . $e->getMessage()
             ], 500);
         }
     }
